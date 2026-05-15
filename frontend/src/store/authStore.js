@@ -1,7 +1,8 @@
 // src/store/authStore.js
-// FIX: Login ke baad refreshToken body se lo aur localStorage mein save karo
-// Vercel (frontend) + Render (backend) = cross-origin = cookies blocked
-// Solution: refreshToken localStorage mein store karo
+// FIX: setUserFromVerify added — verify ke baad user store mein set karo
+// FIX: register ke baad requiresVerification false hone par navigate to dashboard
+// Vercel (frontend) + GCP (backend) = cross-origin = cookies blocked
+// Solution: tokens localStorage mein store karo
 
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
@@ -22,22 +23,22 @@ export const useAuthStore = create(
           const res = await authApi.login({ email, password })
           const { user, accessToken, refreshToken } = res.data.data
 
-          // Save tokens in localStorage
           localStorage.setItem('accessToken', accessToken)
-          // FIX: refreshToken bhi save karo body se
-          if (refreshToken) {
-            localStorage.setItem('refreshToken', refreshToken)
-          }
+          if (refreshToken) localStorage.setItem('refreshToken', refreshToken)
 
           set({ user, accessToken, isAuthenticated: true, isLoading: false })
           return { success: true }
         } catch (err) {
           set({ isLoading: false })
-          return { success: false, message: err.response?.data?.message || 'Login failed' }
+          return {
+            success: false,
+            message: err.response?.data?.message || 'Login failed',
+            code: err.response?.data?.code,
+          }
         }
       },
 
-      // Register
+      // Register — returns userId + requiresVerification for OTP flow
       register: async (data) => {
         set({ isLoading: true })
         try {
@@ -51,11 +52,18 @@ export const useAuthStore = create(
         }
       },
 
+      // Called after OTP/link verification — sets user in store immediately
+      setUserFromVerify: (user, accessToken) => {
+        set({ user, accessToken, isAuthenticated: true })
+      },
+
       // Logout
       logout: async () => {
         try { await authApi.logout() } catch {}
         localStorage.removeItem('accessToken')
         localStorage.removeItem('refreshToken')
+        localStorage.removeItem('pendingUserId')
+        localStorage.removeItem('pendingEmail')
         set({ user: null, accessToken: null, isAuthenticated: false })
       },
 
@@ -69,7 +77,7 @@ export const useAuthStore = create(
         }
       },
 
-      // Update user locally (no server call)
+      // Update user locally
       updateUser: (updates) => {
         set(state => ({ user: { ...state.user, ...updates } }))
       },
