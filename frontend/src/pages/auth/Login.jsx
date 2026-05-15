@@ -1,6 +1,6 @@
 // src/pages/auth/Login.jsx
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { Mail, Lock, Eye, EyeOff } from 'lucide-react'
 import { useAuth } from '../../hooks/useAuth'
 import { Input } from '../../components/ui/Input'
@@ -9,6 +9,7 @@ import toast from 'react-hot-toast'
 
 export const Login = () => {
   const { handleLogin, isLoading } = useAuth()
+  const navigate = useNavigate()
   const [form, setForm] = useState({ email: '', password: '' })
   const [showPass, setShowPass] = useState(false)
   const [errors, setErrors] = useState({})
@@ -27,10 +28,15 @@ export const Login = () => {
 
     const result = await handleLogin(form.email, form.password)
     if (!result.success) {
-      toast.error(result.message || 'Login failed')
-      if (result.message?.includes('verify')) {
-        setErrors({ email: 'Please verify your email first' })
+      // Email not verified → OTP page pe bhejo
+      if (result.code === 'EMAIL_NOT_VERIFIED' || result.message?.toLowerCase().includes('verify')) {
+        toast.error('Please verify your email first')
+        // Email save karo taaki verify page pe resend kaam kare
+        localStorage.setItem('pendingEmail', form.email)
+        navigate('/verify-email')
+        return
       }
+      toast.error(result.message || 'Login failed')
     }
   }
 
@@ -100,11 +106,10 @@ export const Login = () => {
         </p>
       </div>
 
-      {/* Founders highlight */}
       <div className="mt-8 p-4 rounded-xl border border-amber/20 bg-amber/5">
         <p className="text-amber text-xs font-medium mb-1">🏆 Founders Offer</p>
         <p className="text-gray-400 text-xs">
-          Sign up now and lock in 50% off forever. Only {' '}
+          Sign up now and lock in 50% off forever. Only{' '}
           <span className="text-white font-medium">88 spots</span> remaining on Creator plan.
         </p>
       </div>
