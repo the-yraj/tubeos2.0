@@ -325,8 +325,13 @@ const resendOTP = async (email) => {
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
   await setCache(`email_otp:${user._id.toString()}`, { otp, userId: user._id.toString() }, 10 * 60);
 
-  try { await sendOTPEmail(user, otp); } catch (err) {
+  try {
+    await sendOTPEmail(user, otp);
+  } catch (err) {
     console.error('Failed to resend OTP:', err.message);
+    const error = new Error('Failed to send OTP email. Please try again.');
+    error.statusCode = 500;
+    throw error;
   }
 
   return { message: 'OTP resent successfully', userId: user._id.toString() };
