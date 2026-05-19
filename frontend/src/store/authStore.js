@@ -1,9 +1,9 @@
 // src/store/authStore.js
 // FIX: setUserFromVerify added — verify ke baad user store mein set karo
 // FIX: register ke baad requiresVerification false hone par navigate to dashboard
+// FIX: accessToken init localStorage se — page reload pe token null nahi hoga
 // Vercel (frontend) + GCP (backend) = cross-origin = cookies blocked
 // Solution: tokens localStorage mein store karo
-
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { authApi } from '../api/auth.api'
@@ -12,7 +12,10 @@ export const useAuthStore = create(
   persist(
     (set, get) => ({
       user: null,
-      accessToken: null,
+      // FIX 2: Page reload pe localStorage se accessToken init karo
+      // Warna store reinitialize hone pe token null ho jaata tha
+      // aur axios interceptor ke paas token nahi hota tha
+      accessToken: localStorage.getItem('accessToken') || null,
       isLoading: false,
       isAuthenticated: false,
 
@@ -22,10 +25,8 @@ export const useAuthStore = create(
         try {
           const res = await authApi.login({ email, password })
           const { user, accessToken, refreshToken } = res.data.data
-
           localStorage.setItem('accessToken', accessToken)
           if (refreshToken) localStorage.setItem('refreshToken', refreshToken)
-
           set({ user, accessToken, isAuthenticated: true, isLoading: false })
           return { success: true }
         } catch (err) {
@@ -89,6 +90,7 @@ export const useAuthStore = create(
       partialize: (state) => ({
         user: state.user,
         isAuthenticated: state.isAuthenticated,
+        // accessToken partialize mein nahi — localStorage se seedha read hota hai
       }),
     }
   )
