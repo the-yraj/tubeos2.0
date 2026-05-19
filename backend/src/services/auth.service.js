@@ -39,7 +39,10 @@ const register = async ({ name, email, password, referralCode }) => {
   });
 
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
+  // Primary: userId ke saath (normal flow)
   await setCache(`email_otp:${user._id.toString()}`, { otp, userId: user._id.toString() }, 10 * 60);
+  // FIX 1: Fallback — sirf OTP se bhi verify ho sake (agar pendingUserId localStorage se miss ho jaye)
+  await setCache(`email_otp_fallback:${otp}`, { userId: user._id.toString() }, 10 * 60);
 
   try {
     await sendOTPEmail(user, otp);
@@ -83,14 +86,24 @@ const verifyEmail = async (token, userId) => {
     }
     await deleteCache(`email_otp:${userId}`);
   } else {
+    // FIX 1: Pehle link-based token try karo (backward compat for old emails)
     const cached = await getCache(`email_verify:${token}`);
-    if (!cached) {
-      const error = new Error('Invalid or expired verification link');
-      error.statusCode = 400;
-      throw error;
+    if (cached) {
+      cachedUserId = cached.userId;
+      await deleteCache(`email_verify:${token}`);
+    } else {
+      // Fallback: sirf OTP se try karo (jab userId nahi — page reload ya doosra device)
+      const fallback = await getCache(`email_otp_fallback:${token}`);
+      if (!fallback) {
+        const error = new Error('Invalid or expired OTP. Please request a new one.');
+        error.statusCode = 400;
+        throw error;
+      }
+      cachedUserId = fallback.userId;
+      // Dono cache entries clean karo
+      await deleteCache(`email_otp:${cachedUserId}`);
+      await deleteCache(`email_otp_fallback:${token}`);
     }
-    cachedUserId = cached.userId;
-    await deleteCache(`email_verify:${token}`);
   }
 
   const user = await User.findById(cachedUserId);
@@ -215,7 +228,11 @@ const logoutAll = async (userId) => {
 // ==================== FORGOT PASSWORD ====================
 const forgotPassword = async (email) => {
   const user = await User.findOne({ email });
-  if (!user) return { message: 'If that email exists, a reset link has been sent' };
+  // FIX 3: User nahi mila ya email verify nahi — same message (no info leak)
+  // Unverified users password reset nahi kar sakte
+  if (!user || (process.env.BREVO_API_KEY && !user.isEmailVerified)) {
+    return { message: 'If that email exists, a reset link has been sent' };
+  }
 
   const resetToken = crypto.randomBytes(32).toString('hex');
   await setCache(`pwd_reset:${resetToken}`, { userId: user._id.toString() }, 10 * 60);
@@ -323,7 +340,10 @@ const resendOTP = async (email) => {
   }
 
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
+  // Primary cache update
   await setCache(`email_otp:${user._id.toString()}`, { otp, userId: user._id.toString() }, 10 * 60);
+  // Fallback cache bhi update karo resend pe
+  await setCache(`email_otp_fallback:${otp}`, { userId: user._id.toString() }, 10 * 60);
 
   try {
     await sendOTPEmail(user, otp);
